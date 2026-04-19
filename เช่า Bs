@@ -1,0 +1,196 @@
+-- =========================
+-- 🔐 ระบบเช็ค Config Key (Rental System)
+-- =========================
+local player = game:GetService("Players").LocalPlayer
+
+-- ใส่รายชื่อคีย์ที่คุณต้องการสร้างให้ลูกค้าที่นี่
+local ValidKeys = {
+    ["KEY-VIP-1234"] = true,
+    ["KEY-TEST-777"] = true,
+    ["KEY-MONTH-999"] = true
+}
+
+local userKey = getgenv().ConfigKey
+
+if not userKey or not ValidKeys[userKey] then
+    player:Kick("❌ Config Key ไม่ถูกต้องหรือหมดอายุ โปรดติดต่อแอดมิน!")
+    return -- หยุดการทำงานของสคริปต์ทันที
+end
+
+-- =========================
+-- 🛡️ ป้องกันเกมค้างตอนรันสคริปต์ (Safe Inject)
+-- =========================
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+if not player then
+    game:GetService("Players"):GetPropertyChangedSignal("LocalPlayer"):Wait()
+end
+task.wait(2)
+
+-- =========================
+-- 🎲 รายชื่ออาชีพที่กำหนด (3 อาชีพ)
+-- =========================
+local JobsList = {"Janitor", "Shelf Stocker", "Swiper"}
+local rng = Random.new()
+local StartingJob = JobsList[rng:NextInteger(1, #JobsList)]
+
+-- =========================
+-- ⚙️ CONFIG หลัก (ล็อคค่าตามเดิม)
+-- =========================
+getgenv().HermanosDevSetting = {
+    Farming = {
+        Job = StartingJob,
+
+        -- Janitor
+        PaddleMode = "Nearest",
+        Mop = "Smart Select",
+        BuyMop = true,
+
+        -- ATM Hacking (Swiper)
+        HackTools = "Smart Select",
+        HackToolsQuantity = 8,
+        
+        -- อื่นๆ
+        IncludeFarming = true,
+        VehicleType = "Bike",
+        VehicleSpeed = 49,
+        AutoFarm = true,
+        AfkChecker = true,
+        CashDeposit = 200,
+        AutoDeposit = true
+    },
+
+    General = {
+        HideName = true,
+        AntiRagdoll = true,
+        AntiKill = true,
+        AutoRespawn = true,
+    },
+}
+
+-- คีย์สคริปต์หลักรับค่ามาจาก Loader ที่ลูกค้าใส่
+script_key = getgenv().script_key or "" 
+
+-- =========================
+-- 🔁 AUTO JOB SWITCH (สุ่ม 9-12 นาที / วนลูปไม่จำกัด)
+-- =========================
+getgenv().AutoJobSwitch = {
+    Enabled = true,
+    MinTime = 540, -- 9 นาที
+    MaxTime = 720, -- 12 นาที
+}
+
+-- =========================
+-- 🖥️ UI & LOOP SYSTEM
+-- =========================
+task.spawn(function()
+    task.wait(10) 
+    
+    local function CreateUI()
+        local targetGui = (gethui and gethui()) or game:GetService("CoreGui")
+        if not pcall(function() local _ = targetGui.Name end) then
+            targetGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+        end
+
+        if targetGui:FindFirstChild("AutoJobSwitchUI") then
+            targetGui:FindFirstChild("AutoJobSwitchUI"):Destroy()
+        end
+
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "AutoJobSwitchUI"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 99999
+        gui.Parent = targetGui
+
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(0, 260, 0, 65)
+        frame.Position = UDim2.new(1, -280, 0, 20)
+        frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+        frame.BackgroundTransparency = 0.1
+        frame.BorderSizePixel = 0
+        frame.Parent = gui
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 10)
+        corner.Parent = frame
+
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -10, 1, -10)
+        label.Position = UDim2.new(0, 5, 0, 5)
+        label.BackgroundTransparency = 1
+        label.TextScaled = true
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.Font = Enum.Font.GothamBold
+        label.Text = "⏳ เริ่มระบบ..."
+        label.Parent = frame
+
+        return gui, label
+    end
+
+    if getgenv()._AutoJobSwitchThread then
+        task.cancel(getgenv()._AutoJobSwitchThread)
+    end
+
+    getgenv()._AutoJobSwitchThread = task.spawn(function()
+        local gui, label = CreateUI()
+        local sysRng = Random.new()
+        
+        -- 📦 คิวรอบแรก (Shuffle 3 อาชีพ)
+        local initialQueue = {"Janitor", "Shelf Stocker", "Swiper"}
+        for i = #initialQueue, 2, -1 do
+            local j = sysRng:NextInteger(1, i)
+            initialQueue[i], initialQueue[j] = initialQueue[j], initialQueue[i]
+        end
+        local isFirstRound = true
+
+        while getgenv().AutoJobSwitch.Enabled do
+            local currentJob = getgenv().HermanosDevSetting.Farming.Job
+            local nextJob = nil
+
+            -- 🎯 การเลือกอาชีพถัดไป
+            if isFirstRound and #initialQueue > 0 then
+                nextJob = table.remove(initialQueue, 1)
+                if #initialQueue == 0 then isFirstRound = false end
+            else
+                -- สุ่มใหม่โดยไม่ให้ซ้ำกับอาชีพที่เพิ่งทำเสร็จ
+                local pool = {}
+                for _, j in ipairs({"Janitor", "Shelf Stocker", "Swiper"}) do
+                    if j ~= currentJob then table.insert(pool, j) end
+                end
+                nextJob = pool[sysRng:NextInteger(1, #pool)]
+            end
+
+            getgenv().HermanosDevSetting.Farming.Job = nextJob
+            currentJob = nextJob
+
+            -- ⏱️ สุ่มเวลาทำงาน (9 - 12 นาที)
+            local timer = sysRng:NextInteger(getgenv().AutoJobSwitch.MinTime, getgenv().AutoJobSwitch.MaxTime)
+
+            while timer > 0 do
+                if not getgenv().AutoJobSwitch.Enabled then break end
+                if not gui or not gui.Parent then gui, label = CreateUI() end
+
+                local min = math.floor(timer / 60)
+                local sec = timer % 60
+                local prefix = isFirstRound and "✨ [รอบแรก] " or "🧑‍💼 "
+                
+                if label and label.Parent then
+                    label.Text = prefix..currentJob.."\n⏳ "..string.format("%02d", min)..":"..string.format("%02d", sec)
+                end
+
+                task.wait(1)
+                timer -= 1
+            end
+
+            if label and label.Parent then 
+                label.Text = "🎲 กำลังสุ่มอาชีพถัดไป..." 
+            end
+            task.wait(3)
+        end
+    end)
+end)
+
+-- 🚀 โหลด Loader หลัก
+loadstring(game:HttpGet("https://api.luarmor.net/files/v3/loaders/50cc49ea3e0a5a40cd1fb5545dc938b6.lua"))()
